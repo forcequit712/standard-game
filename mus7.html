@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+   <link rel="icon" href="https://em-content.zobj.net/source/google/208/musical-note_1f3b5.gif">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>${track.title}</title>
+  <script src="https://cdn.jsdelivr.net/npm/music-metadata-browser@2.5.11/dist/music-metadata-browser.min.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+      background: #f4f4f4;
+    }
+    .track-list {
+      margin-top: 20px;
+    }
+    .track {
+      margin-bottom: 10px;
+      cursor: pointer;
+    }
+    .track:hover {
+      text-decoration: underline;
+    }
+    .current-song {
+      margin-top: 20px;
+      font-size: 18px;
+      font-weight: bold;
+    }
+    .controls {
+      margin-top: 10px;
+    }
+    button {
+      padding: 10px;
+      color: white;
+      border: none;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+    #prevButton {
+      background-color: #f44336; /* red */
+    }
+    #pauseButton {
+      background-color: #2196F3; /* blue */
+    }
+    #skipButton {
+      background-color: #4CAF50; /* green */
+    }
+    #shuffleButton {
+      background-color: #FFB74D; /* orange */
+    }
+    button:hover {
+      filter: brightness(1.1);
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🎵 Music Folder Player</h1>
+  <input type="file" id="folderInput" webkitdirectory multiple />
+  <div class="track-list" id="trackList"></div>
+
+  <audio id="audioPlayer" controls style="width: 100%; margin-top: 20px;"></audio>
+
+  <div class="current-song" id="currentSong">Currently Playing: None</div>
+  <div class="controls">
+    <button id="prevButton">⏮️ Previous</button>
+    <button id="pauseButton">⏸️ Pause</button>
+    <button id="skipButton">⏭️ Skip</button>
+    <button id="shuffleButton">🔀 Shuffle: On</button>
+  </div>
+
+  <script>
+    const folderInput = document.getElementById('folderInput');
+    const trackList = document.getElementById('trackList');
+    const audioPlayer = document.getElementById('audioPlayer');
+    const currentSong = document.getElementById('currentSong');
+    const skipButton = document.getElementById('skipButton');
+    const pauseButton = document.getElementById('pauseButton');
+    const prevButton = document.getElementById('prevButton');
+    const shuffleButton = document.getElementById('shuffleButton');
+    
+    let isShuffleOn = true;
+    let tracks = [];
+    let currentTrackIndex = 0;
+    let previousTrackIndex = null;  // To keep track of the last track played
+
+    shuffleButton.addEventListener('click', () => {
+      isShuffleOn = !isShuffleOn;
+      shuffleButton.textContent = `🔀 Shuffle: ${isShuffleOn ? 'On' : 'Off'}`;
+      if (isShuffleOn) {
+        generateShuffledOrder();
+      }
+    });
+
+    folderInput.addEventListener('change', async (e) => {
+      const validExtensions = ['.wav', '.ogg', '.flac', '.m4a'];
+      const files = Array.from(e.target.files).filter(file => {
+        return (
+          file.type.startsWith('audio/') ||
+          validExtensions.some(ext => file.name.toLowerCase().endsWith(ext))
+        );
+      });
+
+      if (files.length === 0) {
+        alert("No valid audio files found in folder.");
+        return;
+      }
+
+      try {
+        tracks = await Promise.all(files.map(async (file) => {
+          try {
+            const metadata = await musicMetadata.parseBlob(file);
+            let artist = metadata.common.artist || (metadata.common.artists?.join(", ")) || "Unknown Artist";
+            return {
+              file,
+              url: URL.createObjectURL(file),
+              title: metadata.common?.title || file.name,
+              artist: artist
+            };
+          } catch (err) {
+            console.warn("Metadata read failed for", file.name);
+            return {
+              file,
+              url: URL.createObjectURL(file),
+              title: file.name,
+              artist: "Unknown Artist"
+            };
+          }
+        }));
+
+        displayTrackList();
+        playRandomTrack();
+
+      } catch (err) {
+        console.error("Error reading files:", err);
+        alert("Failed to load music files.");
+      }
+    });
+
+    function displayTrackList() {
+      trackList.innerHTML = "";
+      tracks.forEach((track, index) => {
+        const div = document.createElement('div');
+        div.className = 'track';
+        div.innerText = `${track.title} — ${track.artist}`;
+        div.onclick = () => playTrack(index);
+        trackList.appendChild(div);
+      });
+    }
+
+    function updateCurrentSong() {
+      const track = tracks[currentTrackIndex];
+      currentSong.innerText = `Currently Playing: ${track.title} — ${track.artist}`;
+      document.title = `${track.title} — ${track.artist}`;
+    }
+
+    function playTrack(index) {
+      previousTrackIndex = currentTrackIndex;  // Store the current track index before changing
+      currentTrackIndex = index;
+      const track = tracks[index];
+      audioPlayer.src = track.url;
+      audioPlayer.load();
+      audioPlayer.play().catch(err => console.error("Playback failed:", err));
+      updateCurrentSong();
+    }
+
+    function playRandomTrack() {
+      if (tracks.length === 0) return;
+
+      let nextIndex;
+      if (isShuffleOn) {
+        do {
+          nextIndex = Math.floor(Math.random() * tracks.length);
+        } while (tracks.length > 1 && nextIndex === currentTrackIndex); // Avoid repeat if possible
+      } else {
+        nextIndex = (currentTrackIndex + 1) % tracks.length;
+      }
+
+      playTrack(nextIndex);
+    }
+
+    audioPlayer.addEventListener('ended', () => {
+      playRandomTrack();
+    });
+
+    skipButton.addEventListener('click', () => {
+      const nextIndex = (currentTrackIndex + 1) % tracks.length;
+      playTrack(nextIndex);
+    });
+
+    prevButton.addEventListener('click', () => {
+      if (previousTrackIndex !== null) {
+        playTrack(previousTrackIndex); // Go back to the previous track
+      }
+    });
+
+    pauseButton.addEventListener('click', () => {
+      if (audioPlayer.paused) {
+        audioPlayer.play();
+        pauseButton.textContent = "⏸️ Pause";
+      } else {
+        audioPlayer.pause();
+        pauseButton.textContent = "▶️ Play";
+      }
+    });
+  </script>
+    <p>made with ❤️ by ChatGPT</p>
+</body>
+</html>
